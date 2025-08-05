@@ -12,10 +12,32 @@ const volumenActual = ref(50);
 const estaSilenciado = ref(false);
 const volumenAnterior = ref(50);
 
-// --- REFERENCIAS AL TEMPLATE (reemplaza document.getElementById) ---
-const audioPlayer = ref(null); // Para acceder al <audio>
+// --- NUEVOS ESTADOS PARA KARAOKE ---
+const modoKaraoke = ref(false);
+const lineaActualKaraoke = ref(0);
+const opacidadAudioOriginal = ref(100);
 
-// --- DATOS COMPUTADOS (se actualizan solos cuando el estado cambia) ---
+// --- ESTADOS PARA EDITOR DE LETRAS ---
+const modoEditor = ref(false);
+const textoLineaActual = ref('');
+const letrasEnEdicion = ref([]);
+const tiempoMarcado = ref(0);
+
+// --- REFERENCIAS AL TEMPLATE ---
+const audioPlayer = ref(null);
+
+// --- DATOS DE LETRAS DE EJEMPLO ---
+const letrasKaraoke = ref({
+  // Ejemplo de letras con tiempos (en segundos)
+  "default": [
+    { tiempo: 0, texto: "♪ Bienvenido al modo karaoke ♪" },
+    { tiempo: 3, texto: "Carga una canción para ver las letras aquí" },
+    { tiempo: 6, texto: "¡Diviértete cantando!" },
+    { tiempo: 10, texto: "🎤 ¡A cantar se ha dicho! 🎤" }
+  ]
+});
+
+// --- DATOS COMPUTADOS ---
 const cancionActual = computed(() => {
   if (canciones.value.length > 0) {
     return canciones.value[indiceCancionActual.value];
@@ -23,9 +45,15 @@ const cancionActual = computed(() => {
   return { titulo: 'Sin canción', nombre: 'Agrega música a tu playlist', fuente: '' };
 });
 
-// --- MÉTODOS (reemplazan las funciones de app.js) ---
+const letrasCancionActual = computed(() => {
+  if (cancionActual.value && letrasKaraoke.value[cancionActual.value.titulo]) {
+    return letrasKaraoke.value[cancionActual.value.titulo];
+  }
+  return letrasKaraoke.value.default;
+});
 
-// Manejar cambio de fondo
+// --- MÉTODOS EXISTENTES ---
+
 function manejarCambioDeFondo(e) {
   const file = e.target.files[0];
   if (file) {
@@ -37,12 +65,22 @@ function manejarCambioDeFondo(e) {
   }
 }
 
-// Manejar la selección de archivos de música
 function manejarSeleccionDeMusica(e) {
   const files = Array.from(e.target.files);
   const nuevasCanciones = files.map(file => {
     const url = URL.createObjectURL(file);
     const nombreArchivo = file.name.replace(/\.[^/.]+$/, "");
+    
+    // Añadir letras de ejemplo para cada canción
+    letrasKaraoke.value[nombreArchivo] = [
+      { tiempo: 5, texto: `♪ ${nombreArchivo} ♪` },
+      { tiempo: 10, texto: "Esta es la primera línea de la canción" },
+      { tiempo: 15, texto: "Aquí va el coro principal" },
+      { tiempo: 20, texto: "Otra línea para cantar" },
+      { tiempo: 25, texto: "¡Sigue el ritmo!" },
+      { tiempo: 30, texto: "🎵 Final de la canción 🎵" }
+    ];
+    
     return {
       titulo: nombreArchivo,
       nombre: 'Archivo local',
@@ -58,11 +96,11 @@ function manejarSeleccionDeMusica(e) {
   }
 }
 
-// Carga la información de la canción actual en el reproductor
 function cargarCancion() {
   if (cancionActual.value && audioPlayer.value) {
     audioPlayer.value.src = cancionActual.value.fuente;
     audioPlayer.value.loop = modoRepetir.value;
+    lineaActualKaraoke.value = 0; // Resetear línea de karaoke
     if(estaReproduciendo.value) {
         setTimeout(() => reproducirCancion(), 100);
     }
@@ -90,7 +128,12 @@ function pausarCancion() {
 }
 
 function actualizarProgreso() {
-    progresoActual.value = audioPlayer.value.currentTime;
+  progresoActual.value = audioPlayer.value.currentTime;
+  
+  // Actualizar línea actual de karaoke
+  if (modoKaraoke.value) {
+    actualizarLineaKaraoke();
+  }
 }
 
 function setProgreso() {
@@ -151,11 +194,9 @@ function cambiarVolumen() {
 
 function toggleSilencio() {
     if (estaSilenciado.value) {
-        // Restaurar volumen
         volumenActual.value = volumenAnterior.value;
         estaSilenciado.value = false;
     } else {
-        // Silenciar
         volumenAnterior.value = volumenActual.value;
         volumenActual.value = 0;
         estaSilenciado.value = true;
@@ -163,12 +204,103 @@ function toggleSilencio() {
     cambiarVolumen();
 }
 
+// --- NUEVOS MÉTODOS PARA KARAOKE ---
+
+function toggleKaraoke() {
+  modoKaraoke.value = !modoKaraoke.value;
+  if (modoKaraoke.value) {
+    lineaActualKaraoke.value = 0;
+    modoEditor.value = false; // Cerrar editor si está abierto
+  }
+}
+
+function actualizarLineaKaraoke() {
+  const tiempoActual = audioPlayer.value.currentTime;
+  const letras = letrasCancionActual.value;
+  
+  for (let i = letras.length - 1; i >= 0; i--) {
+    if (tiempoActual >= letras[i].tiempo) {
+      lineaActualKaraoke.value = i;
+      break;
+    }
+  }
+}
+
+function cambiarOpacidadAudio() {
+  if (audioPlayer.value) {
+    audioPlayer.value.volume = (volumenActual.value * opacidadAudioOriginal.value) / 10000;
+  }
+}
+
+// --- MÉTODOS PARA EDITOR DE LETRAS ---
+
+function toggleEditor() {
+  modoEditor.value = !modoEditor.value;
+  if (modoEditor.value) {
+    modoKaraoke.value = false; // Cerrar karaoke si está abierto
+    cargarLetrasExistentes();
+  }
+}
+
+function cargarLetrasExistentes() {
+  if (cancionActual.value && letrasKaraoke.value[cancionActual.value.titulo]) {
+    letrasEnEdicion.value = [...letrasKaraoke.value[cancionActual.value.titulo]];
+  } else {
+    letrasEnEdicion.value = [];
+  }
+}
+
+function marcarTiempo() {
+  if (!audioPlayer.value) return;
+  
+  const tiempoActual = Math.round(audioPlayer.value.currentTime * 10) / 10; // Redondear a 1 decimal
+  tiempoMarcado.value = tiempoActual;
+}
+
+function agregarLinea() {
+  if (!textoLineaActual.value.trim()) return;
+  
+  const nuevaLinea = {
+    tiempo: tiempoMarcado.value,
+    texto: textoLineaActual.value.trim()
+  };
+  
+  letrasEnEdicion.value.push(nuevaLinea);
+  // Ordenar por tiempo
+  letrasEnEdicion.value.sort((a, b) => a.tiempo - b.tiempo);
+  
+  // Limpiar input
+  textoLineaActual.value = '';
+}
+
+function eliminarLinea(index) {
+  letrasEnEdicion.value.splice(index, 1);
+}
+
+function guardarLetras() {
+  if (!cancionActual.value) return;
+  
+  letrasKaraoke.value[cancionActual.value.titulo] = [...letrasEnEdicion.value];
+  alert('¡Letras guardadas exitosamente!');
+}
+
+function limpiarEditor() {
+  letrasEnEdicion.value = [];
+  textoLineaActual.value = '';
+  tiempoMarcado.value = 0;
+}
+
+function formatearTiempo(segundos) {
+  const minutos = Math.floor(segundos / 60);
+  const segs = segundos % 60;
+  return `${minutos}:${segs.toFixed(1).padStart(4, '0')}`;
+}
+
 onMounted(() => {
   audioPlayer.value.addEventListener('loadedmetadata', () => {
     progresoActual.max = audioPlayer.value.duration;
   });
   
-  // Establecer volumen inicial
   audioPlayer.value.volume = volumenActual.value / 100;
 });
 </script>
@@ -202,6 +334,87 @@ onMounted(() => {
                   {{ cancion.titulo }}
               </li>
           </ul>
+      </div>
+
+      <!-- EDITOR DE LETRAS -->
+      <div v-if="modoEditor" class="bg-black/60 w-full p-4 rounded-lg border-2 border-blue-400/50">
+        <h3 class="text-center text-lg font-bold mb-4 text-blue-300">✏️ Editor de Letras de Karaoke</h3>
+        
+        <!-- Controles del Editor -->
+        <div class="space-y-3 mb-4">
+          <div class="flex items-center space-x-2">
+            <button @click="marcarTiempo" class="btn btn-sm bg-blue-500/70 hover:bg-blue-500/90 border-none text-white">
+              📍 Marcar Tiempo
+            </button>
+            <span class="text-blue-200 text-sm">{{ formatearTiempo(tiempoMarcado) }}</span>
+          </div>
+          
+          <div class="flex space-x-2">
+            <input 
+              v-model="textoLineaActual" 
+              @keyup.enter="agregarLinea"
+              placeholder="Escribe la línea de la letra aquí..."
+              class="input input-sm flex-1 bg-white/10 border-white/30 text-white placeholder-white/50"
+            />
+            <button @click="agregarLinea" class="btn btn-sm bg-green-500/70 hover:bg-green-500/90 border-none text-white">
+              ➕ Añadir
+            </button>
+          </div>
+        </div>
+
+        <!-- Lista de Letras en Edición -->
+        <div class="bg-black/40 max-h-32 overflow-y-auto p-2 rounded mb-3">
+          <div v-if="letrasEnEdicion.length === 0" class="text-center text-white/50 text-sm">
+            No hay letras añadidas. ¡Empieza agregando algunas!
+          </div>
+          <div v-for="(linea, index) in letrasEnEdicion" :key="index" class="flex items-center justify-between p-1 hover:bg-white/10 rounded text-sm">
+            <span class="text-blue-300 w-12">{{ formatearTiempo(linea.tiempo) }}</span>
+            <span class="flex-1 text-white mx-2">{{ linea.texto }}</span>
+            <button @click="eliminarLinea(index)" class="btn btn-xs bg-red-500/70 hover:bg-red-500/90 border-none text-white">
+              🗑️
+            </button>
+          </div>
+        </div>
+
+        <!-- Botones de Acción -->
+        <div class="flex justify-center space-x-2">
+          <button @click="guardarLetras" class="btn btn-sm bg-green-600/70 hover:bg-green-600/90 border-none text-white">
+            💾 Guardar
+          </button>
+          <button @click="limpiarEditor" class="btn btn-sm bg-orange-500/70 hover:bg-orange-500/90 border-none text-white">
+            🧹 Limpiar
+          </button>
+          <button @click="toggleEditor" class="btn btn-sm bg-gray-500/70 hover:bg-gray-500/90 border-none text-white">
+            ❌ Cerrar
+          </button>
+        </div>
+      </div>
+      <div v-if="modoKaraoke" class="bg-black/40 w-full h-40 overflow-y-auto p-4 rounded-lg border-2 border-white/20">
+        <h3 class="text-center text-lg font-bold mb-3 text-white">🎤 Modo Karaoke 🎤</h3>
+        <div class="space-y-2 text-center">
+          <div 
+            v-for="(linea, index) in letrasCancionActual" 
+            :key="index"
+            class="transition-all duration-300 text-lg font-medium"
+            :class="index === lineaActualKaraoke ? 'text-yellow-300 text-xl scale-110 font-bold' : index < lineaActualKaraoke ? 'text-gray-400' : 'text-white/70'"
+          >
+            {{ linea.texto }}
+          </div>
+        </div>
+      </div>
+
+      <!-- CONTROL DE OPACIDAD DE VOZ (solo visible en modo karaoke) -->
+      <div v-if="modoKaraoke" class="flex items-center space-x-3 w-full">
+        <span class="text-sm text-white/80">🎵 Voz:</span>
+        <input 
+          type="range" 
+          v-model="opacidadAudioOriginal" 
+          @input="cambiarOpacidadAudio"
+          min="0" 
+          max="100"
+          class="range range-xs flex-1 [--range-shdw:yellow] [--thumb-size:0.8rem]"
+        />
+        <span class="text-sm text-white/60 w-8 text-center">{{ opacidadAudioOriginal }}%</span>
       </div>
 
       <div class="text-center pt-2">
@@ -261,6 +474,16 @@ onMounted(() => {
 
           <button @click="toggleRepetir" class="btn btn-circle border-none text-white/80 transition-transform hover:scale-110" :class="modoRepetir ? 'bg-white/40' : 'bg-gray-500/30 hover:bg-gray-500/50'">
             <i class="bi bi-repeat text-2xl"></i>
+          </button>
+
+          <!-- BOTÓN DE KARAOKE -->
+          <button @click="toggleKaraoke" class="btn btn-circle border-none text-white/80 transition-transform hover:scale-110" :class="modoKaraoke ? 'bg-yellow-500/60 text-yellow-100' : 'bg-gray-500/30 hover:bg-gray-500/50'">
+            <i class="bi bi-mic-fill text-2xl"></i>
+          </button>
+
+          <!-- BOTÓN DE EDITOR -->
+          <button @click="toggleEditor" class="btn btn-circle border-none text-white/80 transition-transform hover:scale-110" :class="modoEditor ? 'bg-blue-500/60 text-blue-100' : 'bg-gray-500/30 hover:bg-gray-500/50'">
+            <i class="bi bi-pencil-fill text-2xl"></i>
           </button>
       </div>
     </section>
