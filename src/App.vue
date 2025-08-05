@@ -8,6 +8,9 @@ const modoAleatorio = ref(false);
 const modoRepetir = ref(false);
 const estaReproduciendo = ref(false);
 const progresoActual = ref(0);
+const volumenActual = ref(50);
+const estaSilenciado = ref(false);
+const volumenAnterior = ref(50);
 
 // --- REFERENCIAS AL TEMPLATE (reemplaza document.getElementById) ---
 const audioPlayer = ref(null); // Para acceder al <audio>
@@ -140,14 +143,39 @@ function toggleRepetir() {
     audioPlayer.value.loop = modoRepetir.value;
 }
 
+function cambiarVolumen() {
+    if (audioPlayer.value) {
+        audioPlayer.value.volume = volumenActual.value / 100;
+    }
+}
+
+function toggleSilencio() {
+    if (estaSilenciado.value) {
+        // Restaurar volumen
+        volumenActual.value = volumenAnterior.value;
+        estaSilenciado.value = false;
+    } else {
+        // Silenciar
+        volumenAnterior.value = volumenActual.value;
+        volumenActual.value = 0;
+        estaSilenciado.value = true;
+    }
+    cambiarVolumen();
+}
+
 onMounted(() => {
   audioPlayer.value.addEventListener('loadedmetadata', () => {
     progresoActual.max = audioPlayer.value.duration;
   });
+  
+  // Establecer volumen inicial
+  audioPlayer.value.volume = volumenActual.value / 100;
 });
 </script>
 
 <template>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+
   <div id="app-container" class="flex justify-center items-center min-h-screen w-full bg-cover bg-center" style="background-image: url(/BackGround.jpg);">
     <div class="absolute inset-0 bg-black/50 backdrop-blur-md z-10"></div>
     
@@ -195,6 +223,24 @@ onMounted(() => {
         :max="audioPlayer && !isNaN(audioPlayer.duration) ? audioPlayer.duration : 100"
         class="range range-xs [--range-shdw:white] [--thumb-size:1rem]"
       />
+      
+      <!-- Control de Volumen -->
+      <div class="flex items-center space-x-3 w-full">
+        <button @click="toggleSilencio" class="btn btn-circle btn-sm border-none text-white/80 bg-gray-500/30 hover:bg-gray-500/50 transition-transform hover:scale-110">
+          <i class="bi text-lg" :class="estaSilenciado || volumenActual == 0 ? 'bi-volume-mute-fill' : volumenActual < 50 ? 'bi-volume-down-fill' : 'bi-volume-up-fill'"></i>
+        </button>
+        
+        <input 
+          type="range" 
+          v-model="volumenActual" 
+          @input="cambiarVolumen"
+          min="0" 
+          max="100"
+          class="range range-xs flex-1 [--range-shdw:white] [--thumb-size:0.8rem]"
+        />
+        
+        <span class="text-sm text-white/60 w-8 text-center">{{ volumenActual }}</span>
+      </div>
       
       <div class="flex justify-center items-center space-x-2">
           <button @click="toggleAleatorio" class="btn btn-circle border-none text-white/80 transition-transform hover:scale-110" :class="modoAleatorio ? 'bg-white/40' : 'bg-gray-500/30 hover:bg-gray-500/50'">
