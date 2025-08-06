@@ -41,7 +41,7 @@ async function generarFondoConIA(prompt) {
   console.log(`[IA] 🤖 Iniciando generación con Hugging Face: "${prompt}"`);
 
   // ▼▼▼ ¡Tu TOKEN de Hugging Face! ▼▼▼
-  const apiToken = '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'; // Tu token está aquí
+  const apiToken = 'hhf_npHqlmPPNWEjSfHgRoKTtwMgssJUmSwytx'; // Tu token está aquí
   
   // El bloque 'if' erróneo ha sido eliminado. Ya no causará problemas.
 
