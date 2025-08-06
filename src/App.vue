@@ -12,7 +12,7 @@ import ControlesPrincipales from './components/ControlesPrincipales.vue';
 
 // --- ESTADO REACTIVO ---
 const canciones = ref([]);
-const indiceCancionActual = ref(0);
+const indiceCancionActual = ref(-1);
 const modoAleatorio = ref(false);
 const modoRepetir = ref(false);
 const estaReproduciendo = ref(false);
@@ -33,33 +33,91 @@ const letrasKaraoke = ref({
     { tiempo: 3, texto: "Carga una canción para ver las letras" },
   ]
 });
+const generandoFondo = ref(false);
+
+// --- FUNCIÓN PARA LLAMAR A LA IA DE DEEPAI ---
+async function generarFondoConIA(prompt) {
+  generandoFondo.value = true;
+  console.log(`[IA] 🤖 Iniciando generación con Hugging Face: "${prompt}"`);
+
+  // ▼▼▼ ¡Tu TOKEN de Hugging Face! ▼▼▼
+  const apiToken = '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'; // Tu token está aquí
+  
+  // El bloque 'if' erróneo ha sido eliminado. Ya no causará problemas.
+
+  const modelo = 'stabilityai/stable-diffusion-xl-base-1.0';
+  const url = `https://api-inference.huggingface.co/models/${modelo}`;
+
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiToken}`, // Así se autentica en Hugging Face
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        inputs: prompt,
+      }),
+    });
+
+    if (!resp.ok) {
+      if (resp.status === 503) {
+        console.warn("[IA] ⏳ El modelo de IA se está cargando. La imagen puede tardar un poco más en aparecer.");
+      } else {
+        const errorBody = await resp.json();
+        console.error(`[IA] 🛑 Error en la API de Hugging Face (${resp.status}):`, errorBody);
+      }
+      return null;
+    }
+
+    const blob = await resp.blob(); 
+    console.log("[IA] ✅ ¡Imagen generada exitosamente!");
+    
+    return URL.createObjectURL(blob);
+
+  } catch (error) {
+    console.error("[IA] 🛑 Error de red o al procesar la respuesta:", error);
+    return null;
+  } finally {
+    generandoFondo.value = false;
+  }
+}
 
 // --- DATOS COMPUTADOS ---
 const cancionActual = computed(() => {
-  return canciones.value[indiceCancionActual.value] || { titulo: 'Sin canción', nombre: 'Agrega música', fuente: '' };
+  return canciones.value[indiceCancionActual.value] || null;
 });
 
 const letrasCancionActual = computed(() => {
   return (cancionActual.value && letrasKaraoke.value[cancionActual.value.titulo]) || letrasKaraoke.value.default;
 });
 
-// --- WATCHER PARA CONTROL DE VOLUMEN ---
+// --- WATCHERS ---
 watch([volumenActual, opacidadAudioOriginal, modoKaraoke], () => {
   if (!audioPlayer.value) return;
-  let volumenFinal = modoKaraoke.value
-    ? (volumenActual.value * opacidadAudioOriginal.value) / 100
-    : volumenActual.value;
+  let volumenFinal = modoKaraoke.value ? (volumenActual.value * opacidadAudioOriginal.value) / 100 : volumenActual.value;
   audioPlayer.value.volume = volumenFinal / 100;
   estaSilenciado.value = volumenActual.value === 0;
-}, { immediate: true });
+});
 
+watch(indiceCancionActual, (nuevoIndice) => {
+  if (nuevoIndice !== -1) {
+    cargarCancion();
+  }
+});
 
 // --- MÉTODOS ---
 function manejarCambioDeFondo(e) {
   const file = e.target.files[0];
   if (file) {
     const reader = new FileReader();
-    reader.onload = (event) => { document.getElementById('app-container').style.backgroundImage = `url(${event.target.result})`; };
+    reader.onload = (event) => {
+      const fondoUrl = event.target.result;
+      document.getElementById('app-container').style.backgroundImage = `url(${fondoUrl})`;
+      if (cancionActual.value) {
+        cancionActual.value.fondoUrl = fondoUrl;
+      }
+    };
     reader.readAsDataURL(file);
   }
 }
@@ -72,25 +130,53 @@ function manejarSeleccionDeMusica(e) {
     if (!letrasKaraoke.value[nombreArchivo]) {
       letrasKaraoke.value[nombreArchivo] = [{ tiempo: 0, texto: `Letras para ${nombreArchivo}` }];
     }
-    return { titulo: nombreArchivo, nombre: 'Archivo local', fuente: url };
+    return { titulo: nombreArchivo, nombre: 'Archivo local', fuente: url, fondoUrl: null };
   });
   canciones.value.push(...nuevasCanciones);
-  if (canciones.value.length === nuevasCanciones.length && nuevasCanciones.length > 0) {
-    cargarCancion();
+  // Si es la primera vez que se cargan canciones, activa la primera
+  if (indiceCancionActual.value === -1 && canciones.value.length > 0) {
+    indiceCancionActual.value = 0;
   }
 }
 
-// LÓGICA DE CARGA DE CANCIÓN CORREGIDA
-function cargarCancion() {
-  if (cancionActual.value && audioPlayer.value) {
-    // Simplemente carga la nueva fuente. El listener 'loadeddata' se encargará del resto.
-    audioPlayer.value.src = cancionActual.value.fuente;
-    progresoActual.value = 0;
+async function cargarCancion() {
+  const cancion = cancionActual.value;
+  if (cancion && audioPlayer.value) {
+    console.log(`[Canción] Cargando: "${cancion.titulo}"`);
+    const estabaReproduciendo = estaReproduciendo.value;
+
+    // Lógica para el fondo (se queda igual)
+    if (cancion.fondoUrl) {
+      console.log("[Fondo] Usando fondo guardado.");
+      document.getElementById('app-container').style.backgroundImage = `url(${cancion.fondoUrl})`;
+    } else {
+      console.log("[Fondo] No hay fondo guardado. Llamando a la IA.");
+      document.getElementById('app-container').style.backgroundImage = `url(/BackGround.jpg)`;
+      const prompt = `Fondo de pantalla cinemático para la canción '${cancion.titulo}', arte digital.`;
+      const nuevaUrlFondo = await generarFondoConIA(prompt);
+      if (nuevaUrlFondo) {
+        document.getElementById('app-container').style.backgroundImage = `url(${nuevaUrlFondo})`;
+        cancion.fondoUrl = nuevaUrlFondo;
+      }
+    }
+    
+    // --- LÓGICA DE AUDIO CORREGIDA ---
+    // 1. Cargamos la nueva fuente de audio
+    audioPlayer.value.src = cancion.fuente;
+    
+    // 2. Le pedimos al navegador que cargue el audio
+    audioPlayer.value.load();
+    
+    // 3. Si la música ya estaba sonando, intentamos reproducir la nueva canción
+    //    El navegador esperará a que sea posible hacerlo.
+    if (estabaReproduciendo) {
+      reproducirCancion();
+    }
   }
 }
 
 function reproducirPausar() {
-  if (!canciones.value.length || !audioPlayer.value.src) return;
+  if (!cancionActual.value || !audioPlayer.value.src) return;
   if (audioPlayer.value.paused) {
     reproducirCancion();
   } else {
@@ -129,7 +215,6 @@ function siguienteCancion() {
   } else {
     indiceCancionActual.value = (indiceCancionActual.value + 1) % canciones.value.length;
   }
-  cargarCancion();
 }
 
 function cancionAnterior() {
@@ -139,12 +224,10 @@ function cancionAnterior() {
   } else {
     indiceCancionActual.value = (indiceCancionActual.value - 1 + canciones.value.length) % canciones.value.length;
   }
-  cargarCancion();
 }
 
 function tocarDesdePlaylist(index) {
   indiceCancionActual.value = index;
-  cargarCancion();
 }
 
 function obtenerIndiceAleatorio() {
@@ -250,12 +333,10 @@ function manejarFinDeCancion() {
 
 onMounted(() => {
   if (audioPlayer.value) {
-    // LISTENER DE DATOS CARGADOS (CLAVE PARA REPRODUCCIÓN AUTOMÁTICA)
-    audioPlayer.value.addEventListener('loadeddata', () => {
-      const elAudio = audioPlayer.value;
-      if (elAudio && !isNaN(elAudio.duration)) {
-        progresoActual.max = elAudio.duration;
-        // Si el estado global indica que debe sonar, se reproduce.
+    audioPlayer.value.addEventListener('loadedmetadata', () => {
+      if (audioPlayer.value && !isNaN(audioPlayer.value.duration)) {
+        progresoActual.value = 0;
+        // Si el estado es de reproducción, la reanudamos
         if (estaReproduciendo.value) {
           reproducirCancion();
         }
@@ -264,6 +345,7 @@ onMounted(() => {
     audioPlayer.value.addEventListener('ended', manejarFinDeCancion);
   }
 });
+
 </script>
 
 <template>
@@ -272,37 +354,35 @@ onMounted(() => {
   <div id="app-container" class="flex justify-center items-center min-h-screen w-full bg-cover bg-center" style="background-image: url(/BackGround.jpg);">
     <div class="absolute inset-0 bg-black/50 backdrop-blur-md z-10"></div>
     
-    <section class="z-20 flex flex-col text-gray-200 w-[380px] p-6 rounded-2xl bg-white/10">
+    <section class="z-20 flex flex-col items-center text-gray-200 w-[380px] p-6 rounded-2xl bg-white/10 space-y-4">
       
-      <div v-if="!modoKaraoke && !modoEditor" class="contents">
-        <div class="flex flex-col w-full space-y-4">
-          <SelectorArchivos
-            @seleccionar-musica="manejarSeleccionDeMusica" 
-            @seleccionar-fondo="manejarCambioDeFondo" 
-          />
-          <Playlist
-            :canciones="canciones" 
-            :indice-cancion-actual="indiceCancionActual"
-            @seleccionar-cancion="tocarDesdePlaylist"
-          />
-          <InformacionCancion :cancion="cancionActual" />
-          <input 
-            type="range" 
-            v-model="progresoActual" 
-            @input="setProgreso"
-            :max="audioPlayer && !isNaN(audioPlayer.duration) ? audioPlayer.duration : 100"
-            step="0.1"
-            class="range range-xs [--range-shdw:white] [--thumb-size:1rem]"
-          />
-          <ControlVolumen 
-            v-model:volumen="volumenActual"
-            :esta-silenciado="estaSilenciado"
-            @toggle-silencio="toggleSilencio"
-          />
-        </div>
-      </div>
+      <template v-if="!modoKaraoke && !modoEditor">
+        <SelectorArchivos
+          @seleccionar-musica="manejarSeleccionDeMusica" 
+          @seleccionar-fondo="manejarCambioDeFondo" 
+        />
+        <Playlist
+          :canciones="canciones" 
+          :indice-cancion-actual="indiceCancionActual"
+          @seleccionar-cancion="tocarDesdePlaylist"
+        />
+        <InformacionCancion :cancion="cancionActual" />
+        <input 
+          type="range" 
+          v-model="progresoActual" 
+          @input="setProgreso"
+          :max="audioPlayer && !isNaN(audioPlayer.duration) ? audioPlayer.duration : 100"
+          step="0.1"
+          class="range range-xs [--range-shdw:white] [--thumb-size:1rem]"
+        />
+        <ControlVolumen 
+          v-model:volumen="volumenActual"
+          :esta-silenciado="estaSilenciado"
+          @toggle-silencio="toggleSilencio"
+        />
+      </template>
       
-      <div v-if="modoEditor" class="contents">
+      <template v-if="modoEditor">
         <EditorLetras
           :letras-en-edicion="letrasEnEdicion"
           :tiempo-marcado="tiempoMarcado"
@@ -314,17 +394,17 @@ onMounted(() => {
           @limpiar="limpiarEditor"
           @cerrar="toggleEditor"
         />
-      </div>
+      </template>
 
-      <div v-if="modoKaraoke" class="contents">
+      <template v-if="modoKaraoke">
         <VisorKaraoke
           :letras="letrasCancionActual"
           :linea-actual="lineaActualKaraoke"
           v-model:opacidad-voz="opacidadAudioOriginal"
         />
-      </div>
+      </template>
 
-      <div v-if="!modoEditor" class="mt-4 w-full">
+      <div class="w-full pt-4">
          <ControlesPrincipales
           :esta-reproduciendo="estaReproduciendo"
           :modo-aleatorio="modoAleatorio"
