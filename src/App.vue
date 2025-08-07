@@ -122,6 +122,11 @@ function manejarSeleccionDeMusica(e) {
 
 async function cargarCancion() {
   const cancion = cancionActual.value;
+  const letrasGuardadas = JSON.parse(localStorage.getItem('letrasKaraoke') || '{}');
+  if (letrasGuardadas[cancion.titulo]) {
+    letrasKaraoke.value[cancion.titulo] = letrasGuardadas[cancion.titulo];
+  }
+
   if (cancion && audioPlayer.value) {
     const estabaReproduciendo = estaReproduciendo.value;
     const fondosGuardados = JSON.parse(localStorage.getItem('fondosCanciones') || '{}');
@@ -243,7 +248,18 @@ function eliminarLinea(index) {
 }
 function guardarLetras() {
   if (!cancionActual.value) return;
-  letrasKaraoke.value[cancionActual.value.titulo] = [...letrasEnEdicion.value];
+
+  const titulo = cancionActual.value.titulo;
+  const letras = [...letrasEnEdicion.value];
+
+  // Guarda en el estado reactivo
+  letrasKaraoke.value[titulo] = letras;
+
+  // Guarda en localStorage
+  const letrasGuardadas = JSON.parse(localStorage.getItem('letrasKaraoke') || '{}');
+  letrasGuardadas[titulo] = letras;
+  localStorage.setItem('letrasKaraoke', JSON.stringify(letrasGuardadas));
+
   alert('¡Letras guardadas!');
 }
 function limpiarEditor() {
@@ -260,6 +276,9 @@ function manejarFinDeCancion() {
 }
 
 onMounted(() => {
+  const letrasGuardadas = JSON.parse(localStorage.getItem('letrasKaraoke') || '{}');
+  letrasKaraoke.value = { ...letrasKaraoke.value, ...letrasGuardadas };
+
   if (audioPlayer.value) {
     audioPlayer.value.addEventListener('loadedmetadata', () => {
       progresoActual.value = 0;
