@@ -37,19 +37,8 @@ const generandoFondo = ref(false);
 // --- IA: generar fondo y convertirlo en base64 ---
 async function generarFondoConIA(prompt) {
   generandoFondo.value = true;
-<<<<<<< HEAD
-  console.log(`[IA] 🤖 Iniciando generación con Hugging Face: "${prompt}"`);
-
-  // ▼▼▼ ¡Tu TOKEN de Hugging Face! ▼▼▼
-  const apiToken = 'hhf_npHqlmPPNWEjSfHgRoKTtwMgssJUmSwytx'; // Tu token está aquí
-  
-  // El bloque 'if' erróneo ha sido eliminado. Ya no causará problemas.
-
-  const modelo = 'stabilityai/stable-diffusion-xl-base-1.0';
-=======
   const apiToken = import.meta.env.VITE_HF_TOKEN;
   const modelo = 'CompVis/stable-diffusion-v1-4'; // ✅ modelo gratuito
->>>>>>> 1a1b9cb914dea144ef0bf0833721edad779eb951
   const url = `https://api-inference.huggingface.co/models/${modelo}`;
 
   try {
