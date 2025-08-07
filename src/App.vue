@@ -38,7 +38,7 @@ const generandoFondo = ref(false);
 async function generarFondoConIA(prompt) {
   generandoFondo.value = true;
   const apiToken = import.meta.env.VITE_HF_TOKEN;
-  const modelo = 'CompVis/stable-diffusion-v1-4'; // ✅ modelo gratuito
+  const modelo = 'black-forest-labs/FLUX.1-dev'; // ✅ modelo gratuito
   const url = `https://api-inference.huggingface.co/models/${modelo}`;
 
   try {
